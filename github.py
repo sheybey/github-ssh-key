@@ -4,6 +4,7 @@ from subprocess import check_call
 from os import path, environ
 from sys import argv, exit
 from socket import gethostname
+from getpass import getuser, getpass
 
 from requests import get, post
 
@@ -88,14 +89,14 @@ class GitHub(API):
 
 def main():
     local_key = SSHKey()
-    comment = environ['USER'] + '@' + gethostname()
+    comment = getuser() + '@' + gethostname()
     if not local_key.exists():
         local_key.generate(comment=comment)
     public_key = local_key.read_public().strip()
 
     api = GitHub(
         input('Username: ').strip(),
-        input('Password: ')
+        getpass('Password: ')
     )
 
     if not api.check_auth():
