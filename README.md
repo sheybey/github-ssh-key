@@ -8,5 +8,6 @@ automates this process.
 
 The script is written in Python 3 and uses Requests, which is installed by
 default on most modern Linux distributions. Run the script and it will prompt
-you for your GitHub username and password and use the credentials provided to
-upload the default SSH key (`.ssh/id_rsa`,) generating it if necessary.
+you to authenticate with GitHub. Once you have done so, the script will add
+the default SSH key (`.ssh/id_rsa`) to your account, generating it first if
+necessary.
