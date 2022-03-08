@@ -4,7 +4,8 @@ from subprocess import check_call
 from os import path, environ
 from sys import argv, exit
 from socket import gethostname
-from getpass import getuser, getpass
+from getpass import getuser
+from time import sleep
 
 from requests import get, post
 
@@ -57,34 +58,60 @@ class API():
 
 
 class GitHub(API):
-    _otp = 'X-GitHub-OTP'
-
-    def __init__(self, user, password):
+    def __init__(self, client_id):
+        self._client_id = client_id
         super().__init__(
             'https://api.github.com',
-            {
-                'headers': {'Accept': 'application/vnd.github.v3+json'},
-                'auth': (user, password)
-            }
+            {'headers': {'Accept': 'application/vnd.github.v3+json'}}
         )
 
-    def check_auth(self):
-        response = self.user.get()
-        if not response.ok:
-            if (
-                response.status_code == 401 and
-                response.headers.get(self._otp, '').startswith('required')
-            ):
-                return self.handle_2fa()
+    def authenticate(self):
+        code = post(
+            'https://github.com/login/device/code',
+            data={
+                'client_id': self._client_id,
+                'scope': 'admin:public_key'
+            },
+            headers={'Accept': 'application/json'}
+        ).json()
+
+        print('Please enter the following code at', code['verification_uri'])
+        print(code['user_code'])
+
+        token = None
+        while token is None:
+            token = self._poll_for_token(code)
+        if token is False:
             return False
+
+        self._kwargs['headers']['Authorization'] = 'Bearer ' + token
         return True
 
-    def handle_2fa(self):
-        code = ''
-        while not code:
-            code = input('Enter your two-factor authentication code: ')
-        self._kwargs['headers'][self._otp] = code.strip()
-        return True
+    def _poll_for_token(self, code):
+        sleep(code['interval'])
+        token = post(
+            'https://github.com/login/oauth/access_token',
+            data={
+                'client_id': self._client_id,
+                'device_code': code['device_code'],
+                'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'
+            },
+            headers={'Accept': 'application/json'}
+        ).json()
+
+        access_token = token.get('access_token')
+        if access_token is not None:
+            return access_token
+        else:
+            error = token.get('error')
+            if error == 'authorization_pending':
+                return None
+            else:
+                print('GitHub authorization error:', error)
+                return False
+
+
+CLIENT_ID = '269e96cbf27d57068fae'
 
 
 def main():
@@ -94,13 +121,11 @@ def main():
         local_key.generate(comment=comment)
     public_key = local_key.read_public().strip()
 
-    api = GitHub(
-        input('Username: ').strip(),
-        getpass('Password: ')
-    )
-
-    if not api.check_auth():
-        print("Failed to authenticate with GitHub")
+    api = GitHub(CLIENT_ID)
+    if api.authenticate():
+        print('Authenticated. Checking keys...')
+    else:
+        print('Failed to authenticate with GitHub')
         exit(1)
 
     keys = api.user.keys.get().json()
